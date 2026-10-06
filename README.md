@@ -38,6 +38,12 @@ python engine/v2_two_stage.py
 # ① greedy == 无 cache 基线  True   ② 同 seed 逐字复现  True   ③ 换 seed 不同  True
 ```
 
+- 生成演示（自定义 prompt 与采样参数）：
+
+```bash
+python demo.py "从前有一座山，山里有座庙，" --n 50 --t 0.8 --p 0.9 --seed 42
+```
+
 ## Roadmap
 
 - **v3**：KV Cache int8/int4 量化 + 率失真曲线（比特-显存-生成质量 tradeoff）
