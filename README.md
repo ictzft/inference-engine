@@ -15,17 +15,36 @@
 
 参数 596,049,920（emb 26% + 28 层 × 15.7M ≈ **15·d²**）→ bf16 权重 **1.192 GB**（=torch allocated 分毫不差）→ 每 token KV **4KB/层 · 112KB/模型**（=实测 114,688B 分毫不差；GQA 16Q/8KV 账单五折）→ @40960 顶格 4.70GB（权重 3.9 倍）→ 屋顶线 1.46ms（896GB/s）vs 实测 30ms ≈ **20×**（launch 主导，0.6B 未到 memory-bound）。
 
-## 目录
+## 目录（每个文件的作用）
 
 ```
-toy_gpt/       自研被测模型（0.21M, val 1.76@108s）+ 3 组架构对照实验
-               （无残差崩坏 / LN 三方案×深度 / 等参数深瘦vs浅胖：浅胖训练快 15×）
-engine/
-  no_cache_baseline.py   无 cache 贪心 + 计时
-  v1_kv_cache.py         朴素 KV Cache（玩具 cat 版/预分配版 + Qwen HF 版 + bench）
-  v2_two_stage.py        两阶段引擎 + 可插拔采样（pick 插槽）+ EOS 自然停（chat 模式）
-benchmarks/    测量协议（热身遍/同步掐表/单变量清场——冷启动税 17× 的教训）
+inference-engine/
+├── demo.py                        # 一行命令生成演示：prompt/--n/--t/--p/--seed/--chat（裸续写 vs 对话模板+EOS 自然停）
+│
+├── engine/                        # ★ 主角：三版引擎演进（no_cache 量化浪费 → v1 消除浪费 → v2 完整引擎）
+│   ├── no_cache_baseline.py       #   v0 基线：无 cache 贪心循环（每圈整段重喂=重做 prefill 的活）
+│   │                              #      ——所有加速比的分母；O(N²) 浪费的量化器（prompt 10→4000：34.8→801.8 ms/token）
+│   ├── v1_kv_cache.py             #   v1：KV Cache——玩具手写 cat 版（账本=每层每头 (ks,vs) 列表）
+│   │                              #      + Qwen HF past_key_values 版 + TTFT/TPOT 计时器；Qwen3 实测 6.0×，玩具 0.69×（launch-bound）
+│   └── v2_two_stage.py            #   v2：两阶段引擎——prefill/decode 显式拆分（TTFT/TPOT 分开测）
+│                                  #      + pick 可插拔采样（与 vLLM 语义逐位对账）+ EOS 自然停 + 出厂自测三连
+│
+├── toy_gpt/                       # 被测模型：0.21M 字符级 GPT（实验台；93s 可重训，val 1.76）
+│   ├── model.py                   #   Head/MHA/FFN/Block/GPT 逐件实现；Block 可切 ln_mode/norm_pos（为对照实验留缝）
+│   ├── train.py                   #   训练入口：5000 步 ~92s → val 1.76；seed 1337 固定=任何人重跑分毫不差
+│   ├── input.txt                  #   字符级语料（~1MB，65 字符词表）
+│   └── experiments/               #   3 组架构对照实验（每份自带用法 docstring）
+│       ├── exp1_no_residual.py    #     去掉残差：loss 卡死 3.35、底层梯度≈顶层 1/3.5——残差流的价值
+│       ├── exp2_ln_variants.py    #     一个 Block 为什么要两个 LayerNorm：标准/共享/单入口三方案 + 激活统计探针
+│       └── exp3_arch_ablation.py  #     A：LN 方案×深度（4/8/12 层）｜B：post-norm 三连（付 0.02 梯度税未崩）
+│                                  #     ｜C：等参数深瘦 vs 浅胖（浅胖训练快 15×：kernel 启动开销实证）
+│
+└── benchmarks/
+    └── timing_protocols.md        # 测量协议：热身遍 / synchronize 前后夹住 / 单变量清场（冷启动税 17× 的教训）
+                                   #      ——本 README 全部数字的可信度来源
 ```
+
+**推荐阅读顺序**（面试官视角）：`demo.py` → `engine/v2_two_stage.py`（主角）→ `v1_kv_cache.py`（v2 的上一代）→ `no_cache_baseline.py`（分母）→ `toy_gpt/model.py`（手写版 attention 与真模型同构对照）。
 
 ## 环境与本地测试手册
 
