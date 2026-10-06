@@ -47,14 +47,32 @@ python engine/v2_two_stage.py
 
 ### 测试 2｜生成演示（demo.py）
 
-```bash
-python demo.py                                         # 裸续写：50 token ≈ 2.3s（21.8 tok/s 含 TTFT）
-python demo.py "用一句话解释什么是 KV Cache" --chat     # 对话模式：chat template + EOS 自然停
-python demo.py "中国的首都是哪里？" --chat --seed 42   # seed 给定 → 两遍逐字复现
-python demo.py "从前有一座山" --t 0.3 --n 80           # 对比 --t 1.5：稳但同质 vs 野但胡话
+完整模板（全部参数可省，光 `python demo.py` 也能跑）：
+
+```
+python demo.py [prompt] [--n N] [--t T] [--p P] [--seed SEED] [--chat]
 ```
 
-预期要点：`--chat` 回答干净无模板残渣（如"中国的首都是北京。"5 token 自然停，不跑满 n）；每发尾部带 `[n tokens / s = tok/s（含 TTFT）]` 统计。
+| 参数 | 默认 | 作用 |
+|---|---|---|
+| `prompt` | `'The capital of China is'` | 提示词（位置参数，直接写在命令后） |
+| `--n` | 50 | 生成 token 上限（防爆阀；`--chat` 下由 EOS 决定实际停点） |
+| `--t` | 0.8 | temperature：低温固定，高温发散 |
+| `--p` | 0.9 | top-p 截断 |
+| `--seed` | 不给 | 给定则逐字可复现（同命令两遍输出全同） |
+| `--chat` | 关 | 对话模式：chat template + EOS 自然停（开关型，**后面不跟值**） |
+
+常用配方：
+
+```bash
+python demo.py "中国的首都是哪里？" --chat                                # 对话 + EOS 自然停
+python demo.py "用一句话解释什么是 KV Cache" --chat --t 0.6 --seed 42    # 稳定且可复现
+python demo.py "Once upon a time" --t 0.3 --n 80                         # 低温：稳但同质
+python demo.py "Once upon a time" --t 1.5 --n 80                         # 高温：野但胡话风险
+python demo.py "从前有一座山，山里有座庙，" --n 60                        # 裸续写
+```
+
+预期要点：`--chat` 回答干净无模板残渣（如"中国的首都是北京。"5 token 自然停，不跑满 n）；每发尾部带 `[n tokens / s = tok/s（含 TTFT）]` 统计；`--seed` 同命令跑两遍输出逐字相同。
 
 ### 测试 3｜无 cache 基线计时（对照组）
 
