@@ -55,7 +55,7 @@ def sample_top_p(logits, p=0.9, gen=None):
     return torch.multinomial(F.softmax(logits, -1), 1, generator=gen)
 
 
-def apply_rep_penalty(model, logits, hist, penalty=1.2):
+def apply_rep_penalty(logits, hist, penalty=1.2):
     """历史 token 正分÷penalty、负分×penalty（vLLM/HF 同式）；只改打分表不抽样。"""
     logits = logits.clone().float()
     for i in set(hist[0].tolist()):
@@ -95,7 +95,7 @@ def generate_v2(model, ids, n_new, pick=greedy, seed=None, rep=1.0):
     cache, logits = prefill(model, ids)
     for i in range(n_new):
         if rep != 1.0:
-            logits = apply_rep_penalty(model, logits, ids, rep)
+            logits = apply_rep_penalty(logits, ids, rep)
         nxt = pick(logits) if gen is None else pick(logits, gen)
         ids = torch.cat([ids, nxt], 1)
         if i == n_new - 1:                       # guard：最后一张打分表没人读
@@ -106,8 +106,10 @@ def generate_v2(model, ids, n_new, pick=greedy, seed=None, rep=1.0):
 
 # ---------- 自测 ----------
 if __name__ == '__main__':
+    import os
     from transformers import AutoTokenizer, AutoModelForCausalLM
-    M = 'D:/实习/models/Qwen3-0.6B'
+    _LOCAL = 'D:/实习/models/Qwen3-0.6B'
+    M = _LOCAL if os.path.isdir(_LOCAL) else 'Qwen/Qwen3-0.6B'   # 本地优先，否则走 HF（自动下载）
     tok = AutoTokenizer.from_pretrained(M)
     model = AutoModelForCausalLM.from_pretrained(M, dtype=torch.bfloat16).to('cuda').eval()
     ids = tok('The capital of China is', return_tensors='pt').input_ids.cuda()
