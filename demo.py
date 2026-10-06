@@ -17,6 +17,7 @@ def main():
     ap.add_argument('--t', type=float, default=0.8, help='temperature')
     ap.add_argument('--p', type=float, default=0.9, help='top-p')
     ap.add_argument('--seed', type=int, default=None, help='给定则逐字可复现')
+    ap.add_argument('--chat', action='store_true', help='套 Qwen3 对话模板（enable_thinking=False）+ EOS 自然停')
     args = ap.parse_args()
 
     _LOCAL = 'D:/实习/models/Qwen3-0.6B'
@@ -24,18 +25,33 @@ def main():
     tok = AutoTokenizer.from_pretrained(M)
     model = AutoModelForCausalLM.from_pretrained(M, dtype=torch.bfloat16).to('cuda').eval()
 
-    ids = tok(args.prompt, return_tensors='pt').input_ids.cuda()
+    eos = None
+    if args.chat:
+        # 对话模板：裸续写 → 问答任务（day5「格式即指令」）
+        # v5.17 实测：返回 BatchEncoding，input_ids 已是 (1,T) 张量
+        enc = tok.apply_chat_template([{'role': 'user', 'content': args.prompt}],
+                                      tokenize=True, add_generation_prompt=True,
+                                      enable_thinking=False, return_tensors='pt')
+        ids = enc.input_ids.cuda()
+        eos = tok.eos_token_id                       # 听见就停：不跑满 n，两头干净
+    else:
+        ids = tok(args.prompt, return_tensors='pt').input_ids.cuda()
+
     pick = make_sampler(args.t, 0, args.p)
 
+    plen = ids.shape[1]
     torch.cuda.synchronize(); t0 = time.perf_counter()
-    out = generate_v2(model, ids, args.n, pick, seed=args.seed)
+    out = generate_v2(model, ids, args.n, pick, seed=args.seed, eos=eos)
     torch.cuda.synchronize()
     dt = time.perf_counter() - t0
 
-    print(tok.decode(out[0]))
-    n_new = out.shape[1] - ids.shape[1]
+    if args.chat:
+        print(tok.decode(out[0, plen:]))            # 只打回答（模板脚手架不显示）
+    else:
+        print(tok.decode(out[0]))                   # 裸续写：prompt + 续写一起看
+    n_new = out.shape[1] - plen
     print(f'\n[{n_new} tokens / {dt:.2f}s = {n_new/dt:.1f} tok/s（含 TTFT）；'
-          f'T={args.t} top_p={args.p} seed={args.seed}]')
+          f'T={args.t} top_p={args.p} seed={args.seed} chat={args.chat}]')
 
 
 if __name__ == '__main__':

@@ -86,9 +86,10 @@ def make_sampler(t=1.0, k=0, p=0.0, rep=1.0):
 
 # ---------- 引擎主体：pick 可插拔 ----------
 @torch.no_grad()
-def generate_v2(model, ids, n_new, pick=greedy, seed=None, rep=1.0):
+def generate_v2(model, ids, n_new, pick=greedy, seed=None, rep=1.0, eos=None):
     """两阶段生成：prefill 一次 + decode 循环；pick 可换（greedy/温度/topk/topp/组合）。
-    seed 给定则逐字可复现；rep≠1 时每步先对历史施加重复惩罚。"""
+    seed 给定则逐字可复现；rep≠1 时每步先对历史施加重复惩罚；
+    eos 给定则听见就停（cat **前** break——eos 不入历史、不入输出）。"""
     gen = None
     if seed is not None:
         gen = torch.Generator(device=ids.device); gen.manual_seed(seed)
@@ -97,6 +98,8 @@ def generate_v2(model, ids, n_new, pick=greedy, seed=None, rep=1.0):
         if rep != 1.0:
             logits = apply_rep_penalty(logits, ids, rep)
         nxt = pick(logits) if gen is None else pick(logits, gen)
+        if eos is not None and nxt.item() == eos:      # EOS：cat 前停，两头干净
+            break
         ids = torch.cat([ids, nxt], 1)
         if i == n_new - 1:                       # guard：最后一张打分表没人读
             break

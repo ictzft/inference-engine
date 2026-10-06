@@ -23,7 +23,7 @@ toy_gpt/       自研被测模型（0.21M, val 1.76@108s）+ 3 组架构对照�
 engine/
   no_cache_baseline.py   无 cache 贪心 + 计时
   v1_kv_cache.py         朴素 KV Cache（玩具 cat 版/预分配版 + Qwen HF 版 + bench）
-  v2_two_stage.py        两阶段引擎 + 可插拔采样（pick 插槽）
+  v2_two_stage.py        两阶段引擎 + 可插拔采样（pick 插槽）+ EOS 自然停（chat 模式）
 benchmarks/    测量协议（热身遍/同步掐表/单变量清场——冷启动税 17× 的教训）
 ```
 
@@ -41,7 +41,8 @@ python engine/v2_two_stage.py
 - 生成演示（自定义 prompt 与采样参数）：
 
 ```bash
-python demo.py "从前有一座山，山里有座庙，" --n 50 --t 0.8 --p 0.9 --seed 42
+python demo.py "从前有一座山，山里有座庙，" --n 50 --t 0.8 --p 0.9 --seed 42   # 裸续写
+python demo.py "用一句话解释什么是 KV Cache" --chat                          # 对话模式：chat template + EOS 自然停
 ```
 
 ## Roadmap
