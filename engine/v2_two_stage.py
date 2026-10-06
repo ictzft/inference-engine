@@ -29,6 +29,7 @@ def decode_step(model, nxt, cache):
 
 
 # ---------- 采样全家桶（改的都是 logits，最后统一 softmax→multinomial） ----------
+# pick 公约：进一张 (1,V) 打分表（可选第二参 gen 骰子）→ 出一个 (1,1) token id
 def greedy(logits, gen=None):
     return logits.argmax(-1, keepdim=True)
 
@@ -64,7 +65,8 @@ def apply_rep_penalty(logits, hist, penalty=1.2):
 
 
 def make_sampler(t=1.0, k=0, p=0.0, rep=1.0):
-    """组合器：rep → 温度 → top-k → top-p → 抽签。返回 pick(logits, gen=None) -> (1,1)。"""
+    """组合器：rep → 温度 → top-k → top-p → 抽签。返回 pick(logits, gen=None) -> (1,1)。
+    顺序即语义：温度先定分布形状，截断在新形状上圈头部（vLLM SamplingParams 同序）。"""
     def pick(logits, gen=None):
         logits = logits.float()
         # （rep 在引擎层用 hist 调 apply_rep_penalty，组合器内不重复实现）
@@ -95,6 +97,7 @@ def generate_v2(model, ids, n_new, pick=greedy, seed=None, rep=1.0, eos=None):
         gen = torch.Generator(device=ids.device); gen.manual_seed(seed)
     cache, logits = prefill(model, ids)
     for i in range(n_new):
+        # 循环两件套：表进 pick → token 出；token 进模型 → 新表出
         if rep != 1.0:
             logits = apply_rep_penalty(logits, ids, rep)
         nxt = pick(logits) if gen is None else pick(logits, gen)

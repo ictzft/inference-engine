@@ -51,13 +51,13 @@ def gen_cache_toy(m, ctx, n_new):
 def greedy_hf_cache(model, ids, n_new):
     """DynamicCache 账本；prefill 整段一次（并行），decode 只前向新 token。"""
     ids = ids.clone()
-    cache = DynamicCache()                                # 每场新建
-    logits = model(ids, past_key_values=cache, use_cache=True).logits[:, -1]
+    cache = DynamicCache()                                # 每场新建：上一场的旧账会串味
+    logits = model(ids, past_key_values=cache, use_cache=True).logits[:, -1]   # prefill：整段一次=全位置并行
     for i in range(n_new):
         nxt = logits.argmax(-1, keepdim=True)
         ids = torch.cat([ids, nxt], 1)
-        if i < n_new - 1:
-            logits = model(nxt, past_key_values=cache, use_cache=True).logits[:, -1]
+        if i < n_new - 1:                                 # guard：最后一张打分表没人读，省一次前向
+            logits = model(nxt, past_key_values=cache, use_cache=True).logits[:, -1]   # decode：只喂 (1,1)
     return ids
 
 

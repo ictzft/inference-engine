@@ -28,6 +28,7 @@ def get_batch(split):
 
 @torch.no_grad()
 def estimate(m, iters=200):
+    """train/val 各抽 200 个 batch 求平均——单批噪声大，多批均值才可信。"""
     out = {}
     for sp in ['train', 'val']:
         ls = torch.zeros(iters)
@@ -37,20 +38,20 @@ def estimate(m, iters=200):
     return out
 
 def main():
-    torch.manual_seed(1337)
+    torch.manual_seed(1337)      # 种子固定：任何人重跑得到分毫不差的曲线（README 测试 4 的可复现性来源）
     m = GPT(vocab_size, n_layer=4, n_embd=64, n_head=4, block_size=block_size).to(device)
-    print('参数量:', sum(p.numel() for p in m.parameters()))
+    print('参数量:', sum(p.numel() for p in m.parameters()))   # 应精确 = 209,729（手推对账锚点）
     opt = torch.optim.AdamW(m.parameters(), lr=lr)
     t0 = time.time()
     for it in range(max_iters):
         if (it + 1) % 1000 == 0 or it == 0:
             L = estimate(m, iters=min(200, max_iters))
-            print(f'step {it+1}: train {L["train"]:.4f}, val {L["val"]:.4f}')
+            print(f'step {it+1}: train {L["train"]:.4f}, val {L["val"]:.4f}')   # val 持续高于 train = 过拟合信号
         xb, yb = get_batch('train')
-        _, loss = m(xb, yb)
+        _, loss = m(xb, yb)                                    # 训练四步：取样 → 前向 → 反传 → 更新
         opt.zero_grad(set_to_none=True); loss.backward(); opt.step()
     print(f'耗时 {time.time()-t0:.0f}s')
-    torch.save(m.state_dict(), BASE / 'toy_gpt.pt')
+    torch.save(m.state_dict(), BASE / 'toy_gpt.pt')            # 权重落盘（.pt 已被 .gitignore 排除）
 
 if __name__ == '__main__':
     main()
