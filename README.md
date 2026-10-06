@@ -27,23 +27,58 @@ engine/
 benchmarks/    测量协议（热身遍/同步掐表/单变量清场——冷启动税 17× 的教训）
 ```
 
-## 环境与运行
+## 环境与本地测试手册
 
-- 依赖：`torch`（CUDA）· `transformers>=5`（v5 的 `DynamicCache` 新 API：`cache.layers[i].keys/.values`）
-- 模型自动定位：优先本地 `D:/实习/models/Qwen3-0.6B`，不存在则回退 HuggingFace id `Qwen/Qwen3-0.6B`（自动下载）
-- 一键自测（三连全绿 = 两阶段+采样语义无损）：
+**环境（作者本机）**：Windows + RTX 5070 Ti · Python 3.11 conda 环境（torch cu128、transformers 5.17）。本机运行用 `E:\anaconda\envs\infra\python.exe`（下文简写 `python`）；任意机器装好 `torch`(CUDA) + `transformers>=5` 即可。模型自动定位：本地 `D:/实习/models/Qwen3-0.6B` 优先，不存在则回退 HuggingFace id `Qwen/Qwen3-0.6B`（自动下载约 1.2GB）。
+
+### 测试 1｜引擎自测（两阶段+采样语义无损三连）
 
 ```bash
 python engine/v2_two_stage.py
-# ① greedy == 无 cache 基线  True   ② 同 seed 逐字复现  True   ③ 换 seed 不同  True
 ```
 
-- 生成演示（自定义 prompt 与采样参数）：
+预期输出（2026-10-06 实测）：
+
+```
+① greedy == 无cache 基线: True
+② 同 seed 逐字复现: True | ③ 换 seed 不同: True
+样例: ' Beijing, the capital of Russia is Moscow, and the capital'
+```
+
+### 测试 2｜生成演示（demo.py）
 
 ```bash
-python demo.py "从前有一座山，山里有座庙，" --n 50 --t 0.8 --p 0.9 --seed 42   # 裸续写
-python demo.py "用一句话解释什么是 KV Cache" --chat                          # 对话模式：chat template + EOS 自然停
+python demo.py                                         # 裸续写：50 token ≈ 2.3s（21.8 tok/s 含 TTFT）
+python demo.py "用一句话解释什么是 KV Cache" --chat     # 对话模式：chat template + EOS 自然停
+python demo.py "中国的首都是哪里？" --chat --seed 42   # seed 给定 → 两遍逐字复现
+python demo.py "从前有一座山" --t 0.3 --n 80           # 对比 --t 1.5：稳但同质 vs 野但胡话
 ```
+
+预期要点：`--chat` 回答干净无模板残渣（如"中国的首都是北京。"5 token 自然停，不跑满 n）；每发尾部带 `[n tokens / s = tok/s（含 TTFT）]` 统计。
+
+### 测试 3｜无 cache 基线计时（对照组）
+
+```bash
+python engine/no_cache_baseline.py
+```
+
+预期：贪心输出 + `TPOT(无cache): ~34 ms/token`（短 prompt；对照 v2 两阶段 TPOT 28.6ms——prompt 越长差距越大，核心数字表的 6.0×/7.2× 即此差）。
+
+### 测试 4｜被测模型复训（0.21M 字符级 GPT）
+
+```bash
+python toy_gpt/train.py 200     # 快速自检 ~10s
+python toy_gpt/train.py         # 全量 5000 步
+```
+
+预期（2026-10-06 全量实测）：`参数量: 209729`（=手推对账 12·d² 主项）→ step 5000 `val 1.7617`，耗时 92~108s @5070 Ti。
+
+### 常见坑（Windows）
+
+- CMD 跨盘切目录必须 `cd /d D:\...`（不带 `/d` 不生效）；
+- 系统 Python 缺依赖 → 用 conda 环境完整路径；
+- `--n` 是防爆上限不是目标长度：`--chat` 由 EOS 决定停，裸续写跑满 n；
+- v5.17：`apply_chat_template(tokenize=True)` 返回 BatchEncoding（demo.py 已按实测处理）。
 
 ## Roadmap
 
